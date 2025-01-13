@@ -21,12 +21,12 @@ public class OpenVpnApi {
     private static final String TAG = "OpenVpnApi";
 
     @TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH_MR1)
-    public static void startVpn(Context context, String config, String name, String username, String password, List<String> bypassPackages) throws RemoteException {
+    public static void startVpn(Context context, String config, String name, String username, String password, List<String> bypassPackages, List<String> onlyPassPackages) throws RemoteException {
         if (TextUtils.isEmpty(config)) throw new RemoteException("config is empty");
-        startVpnInternal(context, config, name, username, password, bypassPackages);
+        startVpnInternal(context, config, name, username, password, bypassPackages,onlyPassPackages);
     }
 
-    static void startVpnInternal(Context context, String config, String name, String username, String password, List<String> bypassPackages) throws RemoteException {
+    static void startVpnInternal(Context context, String config, String name, String username, String password, List<String> bypassPackages, List<String> onlyPassPackages) throws RemoteException {
         ConfigParser cp = new ConfigParser();
         try {
             cp.parseConfig(new StringReader(config));
@@ -38,7 +38,13 @@ public class OpenVpnApi {
             vp.mProfileCreator = context.getPackageName();
             vp.mUsername = username;
             vp.mPassword = password;
-            if(bypassPackages.size() > 0){
+
+            //只允许onlyPassPackages内app走vpn流量，其他走本地网络流量
+            //非此onlyPassPackages模式，判断是否是走避开vpn模式，即只允许bypassPackages内app避开vpn流量（走本地网络流量），其他走vpn。
+            if(onlyPassPackages.size() > 0){
+                vp.mAllowAppVpnBypass = false;
+                vp.mAllowedAppsVpn = new HashSet<>(onlyPassPackages);
+            }else if(bypassPackages.size() > 0){
                 vp.mAllowAppVpnBypass = true;
                 vp.mAllowedAppsVpn = new HashSet<>(bypassPackages);
             }

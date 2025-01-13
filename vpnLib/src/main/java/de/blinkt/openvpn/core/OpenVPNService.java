@@ -937,7 +937,14 @@ public class OpenVPNService extends VpnService implements StateListener, Callbac
         VpnStatus.logInfo(R.string.routes_info_excl, TextUtils.join(", ", mRoutes.getNetworks(false)), TextUtils.join(", ", mRoutesv6.getNetworks(false)));
         VpnStatus.logDebug(R.string.routes_debug, TextUtils.join(", ", positiveIPv4Routes), TextUtils.join(", ", positiveIPv6Routes));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            setAllowedVpnPackages(builder);
+
+            if(mProfile.mAllowAppVpnBypass){
+                // 设置vpn通过或排除方案，只有排除app，去走本地网络
+                setAllowedVpnPackages(builder);
+            }else{
+                setOnlyAllowVpnPackages(builder);
+
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
             // VPN always uses the default network
@@ -1055,9 +1062,10 @@ public class OpenVPNService extends VpnService implements StateListener, Callbac
 
         for (String pkg : mProfile.mAllowedAppsVpn) {
             try {
+                // 设置排除app模式，允许app不走vpn
                 if (mProfile.mAllowedAppsVpnAreDisallowed) {
                     builder.addDisallowedApplication(pkg);
-                } else {
+                } else {    // 如果走只允许app通过vpn模式，那一定不要包含ORBOT_PACKAGE_NAME
                     if (!(profileUsesOrBot && pkg.equals(ORBOT_PACKAGE_NAME))) {
                         builder.addAllowedApplication(pkg);
                         atLeastOneAllowedApp = true;
@@ -1069,6 +1077,7 @@ public class OpenVPNService extends VpnService implements StateListener, Callbac
             }
         }
 
+        // 如果既不是排除模式，也不是允许模式，那只让我们app通过vpn，其他的应用程序不让通过。
         if (!mProfile.mAllowedAppsVpnAreDisallowed && !atLeastOneAllowedApp) {
             VpnStatus.logDebug(R.string.no_allowed_app, getPackageName());
             try {
@@ -1078,6 +1087,7 @@ public class OpenVPNService extends VpnService implements StateListener, Callbac
             }
         }
 
+        // 打印排除模式，打印出让app走本地网络的包名
         if (mProfile.mAllowedAppsVpnAreDisallowed) {
             VpnStatus.logDebug(R.string.disallowed_vpn_apps_info, TextUtils.join(", ", mProfile.mAllowedAppsVpn));
         } else {
@@ -1088,6 +1098,33 @@ public class OpenVPNService extends VpnService implements StateListener, Callbac
             builder.allowBypass();
             VpnStatus.logDebug("Apps may bypass VPN");
         }
+    }
+
+    // 设置只允许app通过vpm，其他app走本地网络
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    private void setOnlyAllowVpnPackages(Builder builder) {
+        boolean profileUsesOrBot = false;
+
+        for (Connection c : mProfile.mConnections) {
+            if (c.mProxyType == Connection.ProxyType.ORBOT)
+                profileUsesOrBot = true;
+        }
+
+        if (profileUsesOrBot)
+            VpnStatus.logDebug("VPN Profile uses at least one server entry with Orbot. Setting up VPN so that OrBot is not redirected over VPN.");
+
+        for (String pkg : mProfile.mAllowedAppsVpn) {
+            try {
+                builder.addAllowedApplication(pkg);
+            } catch (PackageManager.NameNotFoundException e) {
+                mProfile.mAllowedAppsVpn.remove(pkg);
+                VpnStatus.logInfo(R.string.app_no_longer_exists, pkg);
+            }
+        }
+
+
+        // 打印只让app走vpn的包名
+        VpnStatus.logDebug(R.string.allowed_vpn_apps_info, TextUtils.join(", ", mProfile.mAllowedAppsVpn));
     }
 
     public void addDNS(String dns) {
